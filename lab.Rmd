@@ -1,0 +1,187 @@
+---
+title: "Webscraping Data Week 10 Lab Demonstration"
+author: "Nathan Grimes"
+date: "3/7/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytext)
+library(rvest)
+library(cowplot)
+library(ggwordcloud)
+
+```
+
+## Part 0: Find HTML nodes
+
+To get started with this lab, fork my repo and download a Chrome Extension called [SelectorGadget you can access here](https://chrome.google.com/webstore/detail/selectorgadget/mhjhnkcfbdhnjickkkdbjoemdmbfginb?hl=en).
+
+Webscraping is most powerful with a complete understanding of html and css. You already have some experience with both through the development of your shiny apps and websites! All websites store information that can be accessed with the right tools and knowledge of html. For example, with the inspect option in chrome you can see the html code running the website. It may seem like an absolute jumbled mess at first glance, but there are reoccuring structures where data is stored that we can extract. These structures are called nodes. Luckily nodes are often named structures and we can tell R to extract information in specific nodes. [This website provides a nice summary](https://www.w3schools.com/js/js_htmldom_navigation.asp#:~:text=using%20node%20relationships.-,DOM%20Nodes,HTML%20elements%20are%20text%20nodes) of what this means and looks like. Unforuately, there are often hundreds to thousands of nodes that somemtimes duplicate names for different parts of a webpage. Rather than diving headlong into html, instead we can use what is called a css selector to help us find the nodes of interest.  
+
+Clicking on different elements of website highlight the nodes that contain the information therein. As you may see, some names show many elements whereas others are indivdual points. Some nodes guide the layout and style of the website, others have the actual information. It can be tricky to get the exact element you want, and you may not know if you got it correctly until you import the data into R. 
+
+Before we hop into R, I want to leave with you important considerations and procedures.
+
+1) Always examine the website before you start scraping it. It is nearly impossible to structure correct code without playing around the website
+
+2) Look for patterns that you can exploit. Does the website https use a consistent format that you can exploit to loop over?
+
+3) Ask yourself, do I really need this data and do I need a program to get it for me? If you only need to download a couple of files, it's okay to do it by hand. Connecting the data to be updated through a shiny app means you can probably focus on only one page and tailor your scrape to that. If you want to examine hundreds to even thousands of websites, you have to prepared for possible errors and back up plans.
+
+## Webscrape in R
+
+The rvest package is now in tidy form to quickly exploit html. First we need to provide where the html is stored, i.e. website https://. Then we tell rvest where and what data we are looking for.
+
+Let's quickly scrape some lyrics data from one of my favorite bands.
+
+```{r}
+  panic_lyric<-read_html("http://www.songlyrics.com/panic!-at-the-disco/i-write-sins-not-tragedies-lyrics/") %>% 
+    html_nodes("#songLyricsDiv") %>% 
+    html_text() %>% 
+    str_replace_all("\n"," ") %>% 
+    str_remove_all(pattern = "[[:punct:]]") %>% 
+    str_to_lower() %>% 
+    str_split(" ") %>% 
+    as.data.frame()  
+  colnames(panic_lyric)[1]<-"word"  #Use word here so it matches with stop_words
+  
+  panic_clean<-panic_lyric %>% 
+    anti_join(stop_words,by="word")
+```
+
+I chose this website out of others as it has the simplest node tag. Others either hid their lyric property (Genius) or don't differentiate lyric data from other text (AZlyrics) so it becomes a mess. It is possible to extract the data, but it can be wild and I don't want your first exposure to webscrape to be wonky. That comes later. 
+
+## I'm going to get you all to love Purrr
+
+What if we want to scrape the data from hundreds of songs and artists? If we make, use an api, or download other data on an artists entire discography, we scrape all their lyrics in one swoop with purrr.  
+
+Additionally, purrr has incredible functions called safely and possibly that allow us to continue to scrape even if we hit an error. If this was done with a for loop, then the entire loop would eject once an error is hit, ruining a potentially massive run. Also purrr has great functions for handling lists.
+
+```{r data}
+#Load our pre-gathered song data
+load("panic-songs.Rdata")
+
+```
+
+
+```{r purrr, echo=FALSE}
+
+#Make a function for purr
+
+get_lyrics<-function(song,artist,album,year){
+    
+ #Create url base
+  base1<-c("https://songlyrics.com/")
+
+  base2<-c("-lyrics")
+
+#Clean the artist name and song name to match the url
+  artist_url<-str_replace_all(artist,pattern = "(?!\\!)[[:punct:]]",replacement = " ") %>% 
+    str_replace_all(pattern = " ",replacement = "-") %>%
+    str_to_lower() %>% 
+    str_squish()
+
+  song_url<- str_remove_all(song,pattern = "(?![!'])[[:punct:]]") %>%   #The (?!\\[!']) tells R to ignore all punct except ! and '
+    str_replace_all(pattern="'",replacement = " ") %>%   #This is a little thing I noticed specific to the website in how they handle apostrophes
+    str_replace_all(pattern = " ",replacement = "-") %>%
+    str_to_lower() %>% 
+    str_squish() 
+  
+  url<-paste(base1,artist_url,"/",song_url,base2,sep="")
+  
+ 
+  
+  #Test to see if the website actually has the song data. Try catch lets me define errors that purr will put out
+  out<-tryCatch({
+    read_html(url)
+  },
+  
+  error=function(cond){
+
+    return(NA)
+  }
+  
+  )
+  
+
+ 
+  if(is.na(out)){
+    
+  stop(paste("Songlyrics.com doesn't have data on",artist,song,sep=" "))}  
+
+  
+  #Get the data from the website and clean it up
+
+  extract<-read_html(url) %>% 
+    html_nodes("#songLyricsDiv") %>% 
+    html_text() %>% 
+    str_replace_all("\n"," ") %>% 
+    str_remove_all(pattern = "[[:punct:]]") %>% 
+    str_to_lower() %>% 
+    str_split(" ") %>% 
+    as.data.frame() %>% 
+    mutate(song=song,artist=artist,album=album,year=year) #Add other names
+  colnames(extract)[1]<-"word"  #Use word here so it matches with stop_words
+  
+  extract_clean<-extract %>% 
+    anti_join(stop_words,by="word")
+  
+
+  
+  return(extract_clean)
+}
+```
+
+```{r runpurr}
+### Run the map to get the song lyrics then clean up the dataframe
+safe_get_ly<-safely(get_lyrics)
+
+
+  song_lyrics<-pmap(patd_df,safe_get_ly) %>% transpose()
+  
+  any_errors_lyrics<-compact(song_lyrics$error)
+  
+  
+#Extract the data from the lists  
+  lyrics<-compact(song_lyrics$result)  %>% 
+  as_tibble_col(column_name = "word") %>% 
+  unnest()
+  
+  ## From here we could row bind this to a "master" lyrics dataframe
+```
+## Can do any lyric analysis we want with our data now in a clean long format
+
+```{r}
+cloud_plot_df<-lyrics %>% 
+  filter(album=="Pray for the Wicked") %>% 
+  count(word) %>% 
+  arrange(-n) %>% 
+  slice(1:100)
+
+cloud<-ggplot(data=cloud_plot_df,aes(label=word))+
+  geom_text_wordcloud(aes(color=n,size=n),shape="diamond")+
+  scale_size_area(max_size = 5)+
+  scale_color_gradientn(colors = c("darkgreen","blue","purple"))+
+  theme_minimal()
+
+
+
+cloud_afever<-lyrics %>% 
+  filter(album=="A Fever You Can't Sweat Out") %>% 
+  count(word) %>% 
+  arrange(-n) %>% 
+  slice(1:100)
+
+cloud2<-ggplot(data=cloud_afever,aes(label=word))+
+  geom_text_wordcloud(aes(color=n,size=n),shape="diamond")+
+  scale_size_area(max_size = 5)+
+  scale_color_gradientn(colors = c("red","orange","gold"))+
+  theme_minimal()
+
+plot_grid(cloud,cloud2)
+```
+
