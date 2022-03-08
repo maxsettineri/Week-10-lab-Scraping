@@ -1,12 +1,12 @@
 ---
 title: "Webscraping Data Week 10 Lab Demonstration"
-author: "Nathan Grimes"
+author: "Nathan Grimes, Casey O'Hara, Allison Horst"
 date: "3/7/2022"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE,cache=TRUE)
 
 library(tidyverse)
 library(tidytext)
@@ -18,11 +18,11 @@ library(ggwordcloud)
 
 ## Part 0: Find HTML nodes
 
-To get started with this lab, fork my repo and download a Chrome Extension called [SelectorGadget you can access here](https://chrome.google.com/webstore/detail/selectorgadget/mhjhnkcfbdhnjickkkdbjoemdmbfginb?hl=en).
+To get started with this lab, [fork my repo](https://github.com/nggrimes/Week-10-lab-Scraping) and download a Chrome Extension called [SelectorGadget you can access here](https://chrome.google.com/webstore/detail/selectorgadget/mhjhnkcfbdhnjickkkdbjoemdmbfginb?hl=en).
 
-Webscraping is most powerful with a complete understanding of html and css. You already have some experience with both through the development of your shiny apps and websites! All websites store information that can be accessed with the right tools and knowledge of html. For example, with the inspect option in chrome you can see the html code running the website. It may seem like an absolute jumbled mess at first glance, but there are reoccuring structures where data is stored that we can extract. These structures are called nodes. Luckily nodes are often named structures and we can tell R to extract information in specific nodes. [This website provides a nice summary](https://www.w3schools.com/js/js_htmldom_navigation.asp#:~:text=using%20node%20relationships.-,DOM%20Nodes,HTML%20elements%20are%20text%20nodes) of what this means and looks like. Unforuately, there are often hundreds to thousands of nodes that somemtimes duplicate names for different parts of a webpage. Rather than diving headlong into html, instead we can use what is called a css selector to help us find the nodes of interest.  
+Webscraping is most powerful with a complete understanding of html and css. You already have some experience with both through the development of your shiny apps and websites! All websites store information that can be accessed with the right tools and knowledge of html. For example, with the inspect option in chrome you can see the html code running the website. It may seem like an absolute jumbled mess at first glance, but there are reoccurring structures where data is stored that we can extract. These structures are called nodes. Luckily nodes are often named structures and we can tell R to extract information in specific nodes. [This website provides a nice summary](https://www.w3schools.com/js/js_htmldom_navigation.asp#:~:text=using%20node%20relationships.-,DOM%20Nodes,HTML%20elements%20are%20text%20nodes) of what this means and looks like. Unfortunately, there are often hundreds to thousands of nodes that sometimes duplicate names for different parts of a webpage. Rather than diving headfirst into html, instead we can use what is called a css selector to help us find the nodes of interest.  
 
-Clicking on different elements of website highlight the nodes that contain the information therein. As you may see, some names show many elements whereas others are indivdual points. Some nodes guide the layout and style of the website, others have the actual information. It can be tricky to get the exact element you want, and you may not know if you got it correctly until you import the data into R. 
+Clicking on different elements of website highlight the nodes that contain the information therein. As you may see, some names show many elements whereas others are individual points. Some nodes guide the layout and style of the website, others have the actual information. It can be tricky to get the exact element you want, and you may not know if you got it correctly until you import the data into R. 
 
 Before we hop into R, I want to leave with you important considerations and procedures.
 
@@ -34,7 +34,7 @@ Before we hop into R, I want to leave with you important considerations and proc
 
 ## Webscrape in R
 
-The rvest package is now in tidy form to quickly exploit html. First we need to provide where the html is stored, i.e. website https://. Then we tell rvest where and what data we are looking for.
+The rvest package is now in tidy form to quickly exploit html. First we need to provide where the html is stored, i.e. website http. Then we tell rvest where and what data we are looking for.
 
 Let's quickly scrape some lyrics data from one of my favorite bands.
 
@@ -43,7 +43,7 @@ Let's quickly scrape some lyrics data from one of my favorite bands.
     html_nodes("#songLyricsDiv") %>% 
     html_text() %>% 
     str_replace_all("\n"," ") %>% 
-    str_remove_all(pattern = "[[:punct:]]") %>% 
+    str_remove_all(pattern = "[[:punct:]]") %>%   #Remove all the punctuation
     str_to_lower() %>% 
     str_split(" ") %>% 
     as.data.frame()  
@@ -63,12 +63,12 @@ Additionally, purrr has incredible functions called safely and possibly that all
 
 ```{r data}
 #Load our pre-gathered song data
-load("panic-songs.Rdata")
+load("panic_songs.Rdata")
 
 ```
 
 
-```{r purrr, echo=FALSE}
+```{r purrr}
 
 #Make a function for purr
 
@@ -106,8 +106,6 @@ get_lyrics<-function(song,artist,album,year){
   }
   
   )
-  
-
  
   if(is.na(out)){
     
