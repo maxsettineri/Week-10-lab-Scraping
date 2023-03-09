@@ -1,0 +1,203 @@
+---
+title: "Week 10 Lab Web Scarping - Tswift"
+author: "Nathaniel Grimes"
+date: "2023-03-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message=FALSE,warning=FALSE)
+library(tidyverse)
+library(rvest)
+
+```
+
+## Introduction
+
+### Spotify API
+
+I didn't want to do this for lab because you have to pay for an account with Spotify. Here is a useful package to pull in metadata on any artist, song, album, and your own listening data. You can also get musical qualities of songs like tempo, key, and how much is an instrumental versus sung. It uses an API to communicate with Spotify, like Casey demonstrated, but tailored just for use in R.
+
+```{r spotify,eval=FALSE}
+library(spotifyr)
+ 
+ Sys.setenv(SPOTIFY_CLIENT_ID = 'xxx') # input your stuff from your spotify dashboard
+ Sys.setenv(SPOTIFY_CLIENT_SECRET = 'xxx')
+
+get_spotify_access_token()
+
+ts_albums<-c("Midnights (3am Edition)","Red (Taylor's Version)","Fearless (Taylor's Version)","evermore (deluxe version)","folklore (deluxe version)","Lover","Repuation","1989 (Deluxe Edition)","Speak Now (Deluxe Edition)","Taylor Swift")
+
+ts<-get_artist_audio_features('taylor swift') %>%  # API call
+  select(artist_name,album_name,album_release_year,track_name) %>%  #Keep this order
+  rename(artist=artist_name,album=album_name,year=album_release_year,song=track_name) %>%
+  filter(album %in% ts_albums)
+```
+
+Part 0: Find HTML nodes
+
+To get started with this lab, [fork my repo](https://github.com/nggrimes/Week-10-lab-Scraping) and download a Chrome Extension called [SelectorGadget you can access here](https://chrome.google.com/webstore/detail/selectorgadget/mhjhnkcfbdhnjickkkdbjoemdmbfginb?hl=en).
+
+Webscraping is most powerful with a complete understanding of html and css. You already have some experience with both through the development of your shiny apps and websites! All websites store information that can be accessed with the right tools and knowledge of html. For example, with the developer tools option in chrome you can see the html code running the website. It may seem like a jumbled mess at first glance, but there are reoccurring structures where data is stored that we can extract. These structures are called nodes. Luckily nodes are often named structures and we can tell R to extract information in specific nodes. [This website provides a nice summary](https://www.w3schools.com/js/js_htmldom_navigation.asp#:~:text=using%20node%20relationships.-,DOM%20Nodes,HTML%20elements%20are%20text%20nodes) of what this means and looks like. Unfortunately, there are often hundreds to thousands of nodes that sometimes duplicate names for different parts of a webpage. Rather than diving headfirst into html, instead we can use what is called a css selector to help us find the nodes of interest.  
+
+Use the new extension you downloaded to start examining a website with data you want to download. Clicking on different elements of a website highlight the nodes that contain the information therein. As you may see, some names show many elements whereas others are individual points. Some nodes guide the layout and style of the website, others have the actual information. It can be tricky to get the exact element you want, and you may not know if you got it correctly until you import the data into R. 
+
+Data can also be stored in html tables. If the data looks like it is presented in a table form on the website, then it's probably stored as a table. Instead of extracting specific nodes, we can instead get all the tables from the website then trim the data to the specific table we're interested in.
+
+Before we hop into R, I want to leave with you important considerations and procedures.
+
+1) Always examine the website before you start scraping it. It is more difficult to structure correct code without understanding the website
+
+2) Look for patterns that you can exploit. Does the website https use a consistent format that you can loop over?
+
+3) Ask yourself, do I really need this data and do I need a program to get it for me? If you only need to download a couple of files, it's okay to do it by hand. Connecting the data to be updated through a shiny app means you can probably focus on only one page and tailor your scrape to that. If you want to examine hundreds to even thousands of websites, you have to prepared for possible errors and back up plans.
+
+## Part 1: Webscraping in R
+
+The rvest package is now in tidy form to quickly exploit html. First we need to provide where the html is stored, i.e. website http. Then we tell rvest where and what data we are looking for.
+
+Let's quickly scrape some lyrics data from Elenenor's favorite artist.
+
+
+```{r}
+
+# First explore azlyrics
+
+alltoowell_lyric<-read_html("https://www.azlyrics.com/lyrics/taylorswift/alltoowell10minuteversiontaylorsversionfromthevault.html") %>% 
+  html_nodes("div") %>%  #If we were looking for a table, replace with html_table(fill=TRUE)
+  pluck(23) %>% 
+  html_text() %>% 
+  str_replace_all(c("\n"=" ","\r"=" ")) %>% 
+  str_remove_all(pattern = "[[:punct:]]") %>%   #Remove all the punctuation
+  str_to_lower() %>% 
+  str_split(" ") %>% 
+  as.data.frame()
+  
+colnames(alltoowell_lyric)[1]<-"word"
+
+lyric<-filter(alltoowell_lyric,word != "")
+```
+
+## Part 2: I'm going to get you all to love Purrr
+
+What if we want to scrape the data from hundreds of songs and artists? If we make a dataframe, use an api, or download other data on an artist's entire discography, we can scrape all their lyrics in one swoop with purrr.  
+
+Additionally, purrr has incredible functions called safely and possibly that allow us to continue to scrape even if we hit an error. If this was done with a for loop, then the entire loop would eject once an error is hit, ruining a potentially massive run. Also purrr has great functions for handling lists.
+
+```{r}
+load(here::here("data","ts.Rdata"))
+# Look at data
+```
+
+First step in purrr is to understand the data and design a function to do what we want. There are two steps, first get the url into a usable format, then do the data extraction.
+
+```{r purrfcn}
+get_lyrics<-function(artist,album,year,song){
+  
+  #Create url base
+  base1<-c("https://azlyrics.com/lyrics/")
+  
+  base2<-c(".html")
+  
+  #Clean the artist name and song name to match the url
+  artist_url<-str_replace_all(artist,pattern = "(?!\\!)[[:punct:]]",replacement = " ") %>% 
+    str_replace_all(pattern = " ",replacement = "") %>%
+    str_to_lower() %>% 
+    str_squish()  # Just a precaution
+  
+  song_url<- str_remove_all(song,pattern = "(?![!'])[[:punct:]]") %>%   #The (?!\\[!']) tells R to ignore all punct except ! and '
+    str_replace_all(pattern="'",replacement = " ") %>%   #This is a little thing I noticed specific to the website in how they handle apostrophes
+    str_replace_all(pattern = " ",replacement = "") %>%
+    str_to_lower() %>% 
+    str_squish() 
+  
+  url<-paste(base1,artist_url,"/",song_url,base2,sep="")
+  
+
+  
+  #Get the data from the website and clean it up
+  
+  extract<-read_html(url) %>% 
+    html_nodes("div") %>%  #If we were looking for a table, replace with html_table(fill=TRUE)
+    pluck(23) %>% 
+    html_text() %>% 
+    str_replace_all(c("\n"=" ","\r"=" ")) %>% 
+    str_remove_all(pattern = "[[:punct:]]") %>%   #Remove all the punctuation
+    str_to_lower() %>% 
+    str_split(" ") %>% 
+    as.data.frame() %>% 
+    mutate(song=song,artist=artist,album=album,year=year) #Add other names
+  
+  
+  colnames(extract)[1]<-"word"  #Use word here so it matches with stop_words
+  
+  extract_clean<-extract %>% 
+    filter(word != "") %>% 
+    anti_join(stop_words,by="word")
+  
+  Sys.sleep(2)  # To stop the website from kicking us off
+  
+  return(extract_clean)
+}
+```
+
+### Run purrr
+
+Let's set up a safely run to make sure we capture any werid errors that might come out.
+
+```{r}
+safe_get_ly<-safely(get_lyrics)
+
+# Let Elenore choose her favorite albums
+song_lyrics<-ts %>% 
+  filter(album=="Red (Taylor's Version)") %>% 
+  pmap(.,safe_get_ly,.progress = TRUE) %>% 
+  transpose()
+
+```
+
+Now we can check for errors in spelling or extracting the data
+
+```{r}
+any_errors_lyrics<-compact(song_lyrics$error)
+
+
+#Extract the data from the lists  
+lyrics<-compact(song_lyrics$result)  %>% 
+  as_tibble_col(column_name = "word") %>% 
+  unnest()
+```
+
+
+## Part 3: Do any data analysis we want from here
+
+```{r}
+cloud_plot_df<-lyrics %>% 
+  filter(album=="Pray for the Wicked") %>% 
+  count(word) %>% 
+  arrange(-n) %>% 
+  slice(1:100)
+
+cloud<-ggplot(data=cloud_plot_df,aes(label=word))+
+  geom_text_wordcloud(aes(color=n,size=n),shape="diamond")+
+  scale_size_area(max_size = 5)+
+  scale_color_gradientn(colors = c("darkgreen","blue","purple"))+
+  theme_minimal()
+
+
+
+cloud_red<-lyrics %>% 
+  filter(album=="Red (Taylor's Version)") %>% 
+  count(word) %>% 
+  arrange(-n) %>% 
+  slice(1:100)
+
+cloud2<-ggplot(data=cloud_red,aes(label=word))+
+  geom_text_wordcloud(aes(color=n,size=n),shape="diamond")+
+  scale_size_area(max_size = 5)+
+  scale_color_gradientn(colors = c("red","orange","gold"))+
+  theme_minimal()
+
+plot_grid(cloud,cloud2)
+```
+
