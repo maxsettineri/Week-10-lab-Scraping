@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE,message=FALSE,warning=FALSE)
 library(tidyverse)
 library(rvest)
+library(tayloRswift)
 
 ```
 
@@ -150,7 +151,7 @@ safe_get_ly<-safely(get_lyrics)
 
 # Let Elenore choose her favorite albums
 song_lyrics<-ts %>% 
-  filter(album=="Red (Taylor's Version)") %>% 
+  filter(album=="Midnights (3am Edition)") %>% 
   pmap(.,safe_get_ly,.progress = TRUE) %>% 
   transpose()
 
