@@ -24,8 +24,8 @@ I didn't want to do this for lab because you have to pay for an account with Spo
 ```{r spotify,eval=FALSE}
 library(spotifyr)
  
- Sys.setenv(SPOTIFY_CLIENT_ID = '850c77b1709c4742bc1070958167c7a1') # input your stuff from your spotify dashboard
- Sys.setenv(SPOTIFY_CLIENT_SECRET = '18274a8547d949828f23237cacc4f5e6')
+ Sys.setenv(SPOTIFY_CLIENT_ID = 'xxx') # input your stuff from your spotify dashboard
+ Sys.setenv(SPOTIFY_CLIENT_SECRET = 'xxx')
 
 get_spotify_access_token()
 
@@ -66,15 +66,15 @@ Let's quickly scrape some lyrics data from Elenenor's favorite artist.
 
 # First explore azlyrics
 
-alltoowell_lyric<-read_html("https://www.azlyrics.com/lyrics/taylorswift/alltoowell10minuteversiontaylorsversionfromthevault.html") %>% 
-  html_nodes("div") %>%  #If we were looking for a table, replace with html_table(fill=TRUE)
-  pluck(23) %>% 
-  html_text() %>% 
-  str_replace_all(c("\n"=" ","\r"=" ")) %>% 
-  str_remove_all(pattern = "[[:punct:]]") %>%   #Remove all the punctuation
-  str_to_lower() %>% 
-  str_split(" ") %>% 
-  as.data.frame()
+alltoowell_lyric<-read_html("https://www.songlyrics.com/taylor-swift/all-too-well-lyrics/") %>% 
+  html_nodes("#songLyricsDiv") %>% 
+    html_text() %>% 
+    str_replace_all("\n"," ") %>% 
+    str_remove_all(pattern = "[[:punct:]]") %>% 
+    str_to_lower() %>% 
+    str_split(" ") %>% 
+    as.data.frame()
+
   
 colnames(alltoowell_lyric)[1]<-"word"
 
