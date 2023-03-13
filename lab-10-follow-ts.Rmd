@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE,message=FALSE,warning=FALSE)
 library(tidyverse)
 library(rvest)
 library(tayloRswift)
+library(tidytext)
+library(ggwordcloud)
 
 ```
 
@@ -22,12 +24,12 @@ I didn't want to do this for lab because you have to pay for an account with Spo
 ```{r spotify,eval=FALSE}
 library(spotifyr)
  
- Sys.setenv(SPOTIFY_CLIENT_ID = 'xxx') # input your stuff from your spotify dashboard
- Sys.setenv(SPOTIFY_CLIENT_SECRET = 'xxx')
+ Sys.setenv(SPOTIFY_CLIENT_ID = '850c77b1709c4742bc1070958167c7a1') # input your stuff from your spotify dashboard
+ Sys.setenv(SPOTIFY_CLIENT_SECRET = '18274a8547d949828f23237cacc4f5e6')
 
 get_spotify_access_token()
 
-ts_albums<-c("Midnights (3am Edition)","Red (Taylor's Version)","Fearless (Taylor's Version)","evermore (deluxe version)","folklore (deluxe version)","Lover","Repuation","1989 (Deluxe Edition)","Speak Now (Deluxe Edition)","Taylor Swift")
+ts_albums<-c("Midnights (3am Edition)","Red","Fearless","evermore (deluxe version)","folklore (deluxe version)","Lover","Repuation","1989 (Deluxe Edition)","Speak Now (Deluxe Edition)","Taylor Swift")
 
 ts<-get_artist_audio_features('taylor swift') %>%  # API call
   select(artist_name,album_name,album_release_year,track_name) %>%  #Keep this order
@@ -76,7 +78,9 @@ alltoowell_lyric<-read_html("https://www.azlyrics.com/lyrics/taylorswift/alltoow
   
 colnames(alltoowell_lyric)[1]<-"word"
 
-lyric<-filter(alltoowell_lyric,word != "")
+lyric<-filter(alltoowell_lyric,word != "") %>% 
+  anti_join(stop_words,by="word")
+  
 ```
 
 ## Part 2: I'm going to get you all to love Purrr
@@ -96,19 +100,19 @@ First step in purrr is to understand the data and design a function to do what w
 get_lyrics<-function(artist,album,year,song){
   
   #Create url base
-  base1<-c("https://azlyrics.com/lyrics/")
+  base1<-c("https://songlyrics.com/")
   
-  base2<-c(".html")
+  base2<-c("-lyrics")
   
   #Clean the artist name and song name to match the url
   artist_url<-str_replace_all(artist,pattern = "(?!\\!)[[:punct:]]",replacement = " ") %>% 
-    str_replace_all(pattern = " ",replacement = "") %>%
+    str_replace_all(pattern = " ",replacement = "-") %>%
     str_to_lower() %>% 
-    str_squish()  # Just a precaution
+    str_squish()
   
   song_url<- str_remove_all(song,pattern = "(?![!'])[[:punct:]]") %>%   #The (?!\\[!']) tells R to ignore all punct except ! and '
     str_replace_all(pattern="'",replacement = " ") %>%   #This is a little thing I noticed specific to the website in how they handle apostrophes
-    str_replace_all(pattern = " ",replacement = "") %>%
+    str_replace_all(pattern = " ",replacement = "-") %>%
     str_to_lower() %>% 
     str_squish() 
   
@@ -119,24 +123,18 @@ get_lyrics<-function(artist,album,year,song){
   #Get the data from the website and clean it up
   
   extract<-read_html(url) %>% 
-    html_nodes("div") %>%  #If we were looking for a table, replace with html_table(fill=TRUE)
-    pluck(23) %>% 
+    html_nodes("#songLyricsDiv") %>% 
     html_text() %>% 
-    str_replace_all(c("\n"=" ","\r"=" ")) %>% 
-    str_remove_all(pattern = "[[:punct:]]") %>%   #Remove all the punctuation
+    str_replace_all("\n"," ") %>% 
+    str_remove_all(pattern = "[[:punct:]]") %>% 
     str_to_lower() %>% 
     str_split(" ") %>% 
     as.data.frame() %>% 
     mutate(song=song,artist=artist,album=album,year=year) #Add other names
-  
-  
   colnames(extract)[1]<-"word"  #Use word here so it matches with stop_words
   
   extract_clean<-extract %>% 
-    filter(word != "") %>% 
     anti_join(stop_words,by="word")
-  
-  Sys.sleep(2)  # To stop the website from kicking us off
   
   return(extract_clean)
 }
@@ -150,8 +148,9 @@ Let's set up a safely run to make sure we capture any werid errors that might co
 safe_get_ly<-safely(get_lyrics)
 
 # Let Elenore choose her favorite albums
+
 song_lyrics<-ts %>% 
-  filter(album=="Midnights (3am Edition)") %>% 
+  filter(album %in% c("1989 (Deluxe Edition)","Red")) %>% 
   pmap(.,safe_get_ly,.progress = TRUE) %>% 
   transpose()
 
@@ -160,6 +159,7 @@ song_lyrics<-ts %>%
 Now we can check for errors in spelling or extracting the data
 
 ```{r}
+
 any_errors_lyrics<-compact(song_lyrics$error)
 
 
@@ -174,7 +174,7 @@ lyrics<-compact(song_lyrics$result)  %>%
 
 ```{r}
 cloud_plot_df<-lyrics %>% 
-  filter(album=="Pray for the Wicked") %>% 
+  filter(album=="1989 (Deluxe Edition)") %>% 
   count(word) %>% 
   arrange(-n) %>% 
   slice(1:100)
@@ -182,23 +182,23 @@ cloud_plot_df<-lyrics %>%
 cloud<-ggplot(data=cloud_plot_df,aes(label=word))+
   geom_text_wordcloud(aes(color=n,size=n),shape="diamond")+
   scale_size_area(max_size = 5)+
-  scale_color_gradientn(colors = c("darkgreen","blue","purple"))+
+  scale_color_taylor(palette = "taylor1989",discrete = FALSE)+
   theme_minimal()
 
 
-
-cloud_red<-lyrics %>% 
-  filter(album=="Red (Taylor's Version)") %>% 
+cloud_red_df<-lyrics %>% 
+  filter(album=="Red") %>% 
   count(word) %>% 
   arrange(-n) %>% 
   slice(1:100)
 
-cloud2<-ggplot(data=cloud_red,aes(label=word))+
+cloud_red<-ggplot(data=cloud_red_df,aes(label=word))+
   geom_text_wordcloud(aes(color=n,size=n),shape="diamond")+
   scale_size_area(max_size = 5)+
-  scale_color_gradientn(colors = c("red","orange","gold"))+
+  scale_color_taylor(palette = "Red",discrete = FALSE)+
   theme_minimal()
 
-plot_grid(cloud,cloud2)
+cowplot::plot_grid(cloud,cloud_red)
+
 ```
 
