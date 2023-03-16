@@ -64,7 +64,7 @@ Let's quickly scrape some lyrics data from Elenenor's favorite artist.
 
 ```{r}
 
-# First explore azlyrics
+# First explore songlyrics website
 
 alltoowell_lyric<-read_html("https://www.songlyrics.com/taylor-swift/all-too-well-lyrics/") %>% 
   html_nodes("#songLyricsDiv") %>% 
@@ -142,7 +142,7 @@ get_lyrics<-function(artist,album,year,song){
 
 ### Run purrr
 
-Let's set up a safely run to make sure we capture any werid errors that might come out.
+Let's set up a safely run to make sure we capture any weird errors that might come out.
 
 ```{r}
 safe_get_ly<-safely(get_lyrics)
