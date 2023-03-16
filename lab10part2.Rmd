@@ -1,0 +1,114 @@
+---
+title: "Lab 10 part 2"
+author: "Max Settineri"
+date: "2023-03-16"
+output: html_document
+---
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(rvest)
+library(tayloRswift)
+library(ggwordcloud)
+library(tidytext)
+```
+
+## Style lyrics
+```{r}
+url <- 'https://www.songlyrics.com/taylor-swift/style-lyrics/'
+
+style_lyrics <- read_html(url) %>% 
+  html_nodes("#songLyricsDiv") %>% 
+  html_text() %>% 
+  str_replace_all("\n", " ") %>% 
+  str_remove_all(pattern = "[[:punct:]]") %>% 
+  str_to_lower() %>% 
+  str_split(" ") %>% 
+  as.data.frame()
+
+colnames(style_lyrics)[1] <- "word"
+
+lyric <- style_lyrics %>% 
+  anti_join(stop_words, by = "word")
+```
+
+## Purrr Tswift lyrics
+
+```{r}
+load(here::here("data", "ts.Rdata")) 
+```
+
+```{r}
+get_lyrics <- function(artist, album, year, song) {
+  
+  # create url base
+  base1 <- c('https://songlyrics.com/')
+  base2 <- c("-lyrics")
+  
+  artist_url <- str_replace_all(artist,pattern = "(?!\\!)[[:punct:]]",replacement = " ") %>% 
+    str_replace_all(pattern = " ",replacement = "-") %>%
+    str_to_lower() %>% 
+    str_squish()
+  
+  song_url <- str_remove_all(song, pattern = "(?!\\[!'])[[:punct:]]") %>% 
+    str_replace_all(pattern = "'", replacement = " ") %>% 
+    str_replace_all(pattern = " ", replacement = "-") %>% 
+    str_to_lower() %>% 
+    str_squish()
+  
+  url <- paste(base1, artist_url, "/", song_url, base2, sep = "") 
+  
+  style_lyrics <- read_html(url) %>% 
+  html_nodes("#songLyricsDiv") %>% 
+  html_text() %>% 
+  str_replace_all("\n", " ") %>% 
+  str_remove_all(pattern = "[[:punct:]]") %>% 
+  str_to_lower() %>% 
+  str_split(" ") %>% 
+  as.data.frame() %>% 
+      mutate(song = song, artist = artist, album = album) 
+
+colnames(style_lyrics)[1] <- "word"
+
+lyric <- style_lyrics %>% 
+  anti_join(stop_words, by = "word")
+
+return(lyric)
+  
+}
+```
+
+## Run the purrr loop
+
+```{r}
+safe_get <- safely(get_lyrics)
+
+song_lyrics <- ts %>% 
+  filter(album %in% c("1989 (Deluxe Edition)", "Speak Now (Deluxe Edition)" )) %>% 
+  pmap(., safe_get, .progress = TRUE) 
+
+song_lyrics_flip <- transpose(song_lyrics)
+
+any_error <- compact(song_lyrics_flip$error)
+
+ts_lyrics <- compact(song_lyrics_flip$result) %>% 
+  as_tibble_col(column_name = "word") %>% 
+  unnest()
+```
+
+```{r}
+cloud_plot <- ts_lyrics %>% 
+  filter(album == "1989 (Deluxe Addition)") %>% 
+  count(word) %>% 
+  arrange(-n) %>% 
+  slice(1:100)
+
+cloud <- ggplot(data = cloud_plot, aes(label = word)) +
+  geom_text_wordcloud(aes(color = n, size = n), shape = 'diamond') +
+  scale_size_area(max_size = 5) +
+  scale_color_taylor(palette = "Red",discrete = FALSE)+
+  theme_minimal()
+```
+
